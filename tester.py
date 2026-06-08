@@ -36,7 +36,7 @@ for index, (icao, callsign) in enumerate(plane_data):
   p = Plane(icao, 1)
   p.callsign = callsign
 
-  p.lat, p.lon = make_point_from_runway_offset(target_runway, along_m, cross_m, arrival=True)
+  p.lat, p.lon = 50.052, 8.636
   p.track = float((target_runway["heading"] + (-3 + index)) % 360)
   p.vertical_rate = -700
 
@@ -62,6 +62,9 @@ for plane in planes:
     arrival=True,
   )
   print(f"{plane.callsign}: in_cone={in_cone} best_runway={best['name'] if best else '-'}")
+
+
+
 
 m = Monitor()
 m.render_planes(planes)

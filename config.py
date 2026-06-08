@@ -1,18 +1,18 @@
 REFERENCE_LAT = 50.0591842216682
 REFERENCE_LON = 8.647883935415157
 
+OBSERVER_DIRECTION = 160
 OBSERVER_LAT = 50.09959287906905
 OBSERVER_LON = 8.60347933045729
 
 FRA_RUNWAYS = [
-  {"name": "07L", "lat": 50.04638, "lon": 8.59303, "heading": 68},
-  {"name": "25R", "lat": 50.05887, "lon": 8.50067, "heading": 248},
-  {"name": "07C", "lat": 50.04083, "lon": 8.59611, "heading": 68},
-  {"name": "25C", "lat": 50.05332, "lon": 8.50376, "heading": 248},
-  {"name": "07R", "lat": 50.03538, "lon": 8.59914, "heading": 68},
-  {"name": "25L", "lat": 50.04781, "lon": 8.50694, "heading": 248},
-  {"name": "18", "lat": 50.03331, "lon": 8.57046, "heading": 180},
-  {"name": "36", "lat": 50.05881, "lon": 8.57052, "heading": 0},
+  {"name": "07L", "lat": 50.037, "lon": 8.497, "heading": 68},
+  {"name": "25R", "lat": 50.045833, "lon": 8.533667, "heading": 248},
+  {"name": "07C", "lat": 50.032667, "lon": 8.534667, "heading": 68},
+  {"name": "25C", "lat": 50.045167, "lon": 8.587, "heading": 248},
+  {"name": "07R", "lat": 50.0275, "lon": 8.534167, "heading": 68},
+  {"name": "25L", "lat": 50.04, "lon": 8.5865, "heading": 248},
+  {"name": "18", "lat": 50.034167, "lon": 8.526, "heading": 178},
 ]
 
 RUNWAY_MAX_DIST_M = 30_000

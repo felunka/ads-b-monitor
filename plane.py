@@ -78,7 +78,8 @@ class Plane():
   
   def distance_and_direction_to_observer(self):
     dist_m = calculate_distance(OBSERVER_LAT, OBSERVER_LON, self.lat, self.lon)
-    heading = calculate_heading(OBSERVER_LAT, OBSERVER_LON, self.lat, self.lon)
+    true_heading = calculate_heading(OBSERVER_LAT, OBSERVER_LON, self.lat, self.lon)
+    heading = (true_heading - OBSERVER_DIRECTION) % 360
 
     return (dist_m, heading)
   
