@@ -1,0 +1,7 @@
+numpy
+Pillow
+pyrtlsdr
+requests
+gpiozero
+rpi-lgpio
+spidev
