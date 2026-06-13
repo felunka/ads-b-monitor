@@ -164,6 +164,92 @@ class EPD:
           idx = idx + 4
     return buf
 
+  def _send_u16_be(self, value):
+    self.send_data((value >> 8) & 0xFF)
+    self.send_data(value & 0xFF)
+
+  def _prepare_bw_patch(self, image, x, y):
+    # UC8179 partial window addressing is aligned to 8 horizontal pixels.
+    if image.mode != "1":
+      image = image.convert("1")
+
+    if x < 0:
+      image = image.crop((-x, 0, image.width, image.height))
+      x = 0
+    if y < 0:
+      image = image.crop((0, -y, image.width, image.height))
+      y = 0
+
+    if x >= self.width or y >= self.height:
+      return None
+
+    if x + image.width > self.width:
+      image = image.crop((0, 0, self.width - x, image.height))
+    if y + image.height > self.height:
+      image = image.crop((0, 0, image.width, self.height - y))
+
+    if image.width == 0 or image.height == 0:
+      return None
+
+    x_aligned = x // 8 * 8
+    dropped_left = x - x_aligned
+    if dropped_left:
+      image = image.crop((dropped_left, 0, image.width, image.height))
+      x = x_aligned
+
+    width_aligned = image.width // 8 * 8
+    if width_aligned == 0:
+      return None
+    if width_aligned != image.width:
+      image = image.crop((0, 0, width_aligned, image.height))
+
+    return image, x, y
+
+  def partial_bw_test(self, image, x, y, write_red_plane=False):
+    """
+    Experimental UC8179-style partial update test for B/W patches.
+
+    This does not change the normal full-refresh path. It should be called
+    only after init() and before sleep().
+    """
+    prepared = self._prepare_bw_patch(image, x, y)
+    if prepared is None:
+      logger.warning("Skipping partial BW test: empty or out-of-range window")
+      return False
+
+    image_bw, x, y = prepared
+    width, height = image_bw.size
+    x_end = x + width - 1
+    y_end = y + height - 1
+
+    # Empirical values used by many UC8179 partial flows.
+    self.send_command(0x50)
+    self.send_data(0xA9)
+    self.send_data(0x07)
+
+    self.send_command(0x91)  # PTIN
+    self.send_command(0x90)  # PTL
+    self.send_data((x >> 8) & 0x03)
+    self.send_data(x & 0xF8)
+    self.send_data((x_end >> 8) & 0x03)
+    self.send_data((x_end & 0xF8) | 0x07)
+    self._send_u16_be(y)
+    self._send_u16_be(y_end)
+    self.send_data(0x01)
+
+    # DTM1 payload for this patch only (1-bit per pixel, horizontal packing).
+    self.send_command(0x10)
+    self.send_data2(list(image_bw.tobytes()))
+
+    # Optional DTM2 write for experiments where the red plane must be explicit.
+    if write_red_plane:
+      self.send_command(0x13)
+      self.send_data2([0x00] * (width * height // 8))
+
+    self.TurnOnDisplay()
+    self.send_command(0x92)  # PTOUT
+    return True
+
   def display(self, image):
     self.send_command(0x10)
     self.send_data2(image)
