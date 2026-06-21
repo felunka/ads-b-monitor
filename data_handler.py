@@ -7,11 +7,15 @@ import time
 import threading
 from plane import Plane
 from monitor import Monitor
+from tester import CsvReplayReader
 
 class DataHandler:
 
   def __init__(self):
-    self.reader = Dump1090Reader()
+    if DUMMY_MODE:
+      self.reader = CsvReplayReader()
+    else:
+      self.reader = Dump1090Reader()
     self.plane_registry = {}
 
     self.monitor = Monitor()
@@ -42,13 +46,27 @@ class DataHandler:
           }
 
           # Find 5 closest to reference point
-          valid_planes = [
-            p for p in self.plane_registry.values()
-            if p.lat != -1 and p.lon != -1 and p.vertical_rate != 0 and p.altitude_in_feet != -1 and p.altitude_in_feet < 15000
-          ]
+          valid_planes = []
+          for plane in self.plane_registry.values():
+            print(plane)
+            estimated_state = plane.get_estimated_state()
+            if estimated_state["lat"] == -1 or estimated_state["lon"] == -1:
+              continue
+            if estimated_state["altitude_in_feet"] == -1 or estimated_state["altitude_in_feet"] >= PLANE_HIGHT_LIMIT:
+              continue
+            valid_planes.append((plane, estimated_state))
+
           top_5_planes = sorted(
               map(
-                  lambda plane: (calculate_distance(REFERENCE_LAT, REFERENCE_LON, plane.lat, plane.lon), plane),
+                  lambda item: (
+                    calculate_distance(
+                      REFERENCE_LAT,
+                      REFERENCE_LON,
+                      item[1]["lat"],
+                      item[1]["lon"]
+                    ),
+                    item[0]
+                  ),
                   valid_planes
               ),
               key=lambda item: item[0]

@@ -1,5 +1,6 @@
 import csv
 import datetime
+import math
 from config import *
 import numpy as np
 from coordinate_helper import calculate_distance, calculate_heading
@@ -51,6 +52,12 @@ class Plane():
     self.ground_lon = -1
     self.vertical_rate = 0
 
+    # Data ages for extrapolation
+    self.last_airborne_position_at = None
+    self.last_surface_position_at = None
+    self.last_velocity_at = None
+    self.last_altitude_at = None
+
     self.last_updated_at = datetime.datetime.now()
     self.number_of_messages = 0
     
@@ -76,9 +83,17 @@ class Plane():
       Last seen: {self.last_updated_at} No messages: {self.number_of_messages}
     """
   
-  def distance_and_direction_to_observer(self):
-    dist_m = calculate_distance(OBSERVER_LAT, OBSERVER_LON, self.lat, self.lon)
-    true_heading = calculate_heading(OBSERVER_LAT, OBSERVER_LON, self.lat, self.lon)
+  def distance_and_direction_to_observer(self, lat=None, lon=None):
+    if lat is None or lon is None:
+      estimated_state = self.get_estimated_state()
+      lat = estimated_state["lat"]
+      lon = estimated_state["lon"]
+
+    if lat == -1 or lon == -1:
+      return (-1, -1)
+
+    dist_m = calculate_distance(OBSERVER_LAT, OBSERVER_LON, lat, lon)
+    true_heading = calculate_heading(OBSERVER_LAT, OBSERVER_LON, lat, lon)
     heading = (true_heading - OBSERVER_DIRECTION) % 360
 
     return (dist_m, heading)
@@ -86,6 +101,8 @@ class Plane():
   def update(self, type_code: int, message_type: MessageType, message_data: str):
     self.last_updated_at = datetime.datetime.now()
     self.number_of_messages += 1
+
+    print(message_type)
 
     if message_type == MessageType.AIRCRAFT_IDENTIFICATION:
       category_code = int(message_data[:3], 2)
@@ -102,6 +119,7 @@ class Plane():
 
       if message_type == MessageType.AIRBORNE_POSITION_GNSS:
         self.altitude_in_meters = int(message_data[3:15], 2)
+        self.last_altitude_at = self.last_updated_at
       else:
         """
         For barometric altitude, the 8th bit of the 12-bit altitude field is the Q bit. It indicates whether the altitude is
@@ -112,6 +130,7 @@ class Plane():
 
         if q:
           self.altitude_in_feet = (int(alt_bits, 2) * 25) - 1000
+          self.last_altitude_at = self.last_updated_at
         else:
           # Too hard to parse encoding and only used by very old transponders
           pass
@@ -123,6 +142,7 @@ class Plane():
         lon_cpr=int(message_data[34:51], 2),
         is_odd=is_odd
       )
+      self.last_airborne_position_at = self.last_updated_at
     elif message_type == MessageType.AIRBORNE_VELOCITIES:
       subtype = int(message_data[0:3], 2)
       if subtype in (1, 2):
@@ -142,6 +162,7 @@ class Plane():
       vr_raw = int(message_data[32:41], 2)
       if vr_raw != 0:
         self.vertical_rate = (vr_raw - 1) * 64 * (-1 if message_data[31] == "1" else 1)
+      self.last_velocity_at = self.last_updated_at
     if message_type == MessageType.SURFACE_POSITION:
       raw_speed = int(message_data[:7], 2)
       if raw_speed == 0:
@@ -174,6 +195,66 @@ class Plane():
         is_odd=is_odd,
         surface=True
       )
+      self.last_surface_position_at = self.last_updated_at
+      self.last_velocity_at = self.last_updated_at
+
+
+  def get_estimated_state(self, at_time=None):
+    if at_time is None:
+      at_time = datetime.datetime.now()
+
+    lat = self.lat
+    lon = self.lon
+    position_time = self.last_airborne_position_at
+
+    # Fall back to ground position if no airborne position is known yet.
+    if (lat == -1 or lon == -1) and self.ground_lat != -1 and self.ground_lon != -1:
+      lat = self.ground_lat
+      lon = self.ground_lon
+      position_time = self.last_surface_position_at
+
+    extrapolated_lat = lat
+    extrapolated_lon = lon
+    if lat != -1 and lon != -1 and self.speed > 0 and self.track != -1 and position_time is not None:
+      elapsed_sec = max(0.0, (at_time - position_time).total_seconds())
+      elapsed_sec = min(elapsed_sec, 120.0)
+      distance_m = self.speed * 0.514444 * elapsed_sec
+      extrapolated_lat, extrapolated_lon = self._project_position(lat, lon, self.track, distance_m)
+
+    extrapolated_altitude_ft = self.altitude_in_feet
+    if self.altitude_in_feet != -1 and self.vertical_rate != 0 and self.last_altitude_at is not None:
+      elapsed_alt_sec = max(0.0, (at_time - self.last_altitude_at).total_seconds())
+      elapsed_alt_sec = min(elapsed_alt_sec, 120.0)
+      extrapolated_altitude_ft = int(round(self.altitude_in_feet + (self.vertical_rate * (elapsed_alt_sec / 60.0))))
+
+    return {
+      "lat": extrapolated_lat,
+      "lon": extrapolated_lon,
+      "altitude_in_feet": extrapolated_altitude_ft,
+      "speed": self.speed,
+      "track": self.track,
+    }
+
+
+  def _project_position(self, lat, lon, track_deg, distance_m):
+    angular_distance = distance_m / EARTH_RADIUS
+    bearing = math.radians(track_deg)
+    lat1 = math.radians(lat)
+    lon1 = math.radians(lon)
+
+    sin_lat1 = math.sin(lat1)
+    cos_lat1 = math.cos(lat1)
+    sin_ad = math.sin(angular_distance)
+    cos_ad = math.cos(angular_distance)
+
+    lat2 = math.asin(sin_lat1 * cos_ad + cos_lat1 * sin_ad * math.cos(bearing))
+    lon2 = lon1 + math.atan2(
+      math.sin(bearing) * sin_ad * cos_lat1,
+      cos_ad - sin_lat1 * math.sin(lat2)
+    )
+    lon2 = (lon2 + 3 * math.pi) % (2 * math.pi) - math.pi
+
+    return math.degrees(lat2), math.degrees(lon2)
 
   
   def _get_nl(self, lat):

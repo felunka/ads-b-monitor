@@ -4,13 +4,13 @@ import textwrap
 from PIL import Image,ImageDraw,ImageFont
 from display_lib import EPD
 
-from config import DUMMY_MONITOR
+from config import DUMMY_MODE
 
 class Monitor:
 
   def __init__(self):
     self.epd = EPD()
-    if not DUMMY_MONITOR:
+    if not DUMMY_MODE:
       self.image = Image.new('RGB', (self.epd.width, self.epd.height), self.epd.WHITE)
       self.show_now()
 
@@ -38,6 +38,7 @@ class Monitor:
     
     for index, plane in enumerate(planes):
       offset_top = 192 * index
+      estimated_state = plane.get_estimated_state()
       
       # Render plane basic data
       draw.text((220, offset_top), f"{plane.callsign} ({plane.route.get_route().get('flight_no', '-')})", font=self.font24, fill=self.epd.BLACK)
@@ -60,10 +61,16 @@ class Monitor:
         draw.text((460, offset_top), path_text, font=self.font24, fill=self.epd.BLACK)
 
       # Observation reference indicator
-      observation_reference = plane.distance_and_direction_to_observer()
-      draw.text((580, offset_top + 32), f"{round(observation_reference[0])}m", font=self.font15, fill=self.epd.BLACK)
-      rotated_direction_icon = direction_icon.rotate(observation_reference[1], expand=True)
-      rotated_image.paste(rotated_direction_icon, (590, offset_top + 5), rotated_direction_icon)
+      observation_reference = plane.distance_and_direction_to_observer(
+        lat=estimated_state["lat"],
+        lon=estimated_state["lon"]
+      )
+      if observation_reference[0] >= 0:
+        draw.text((580, offset_top + 32), f"{round(observation_reference[0])}m", font=self.font15, fill=self.epd.BLACK)
+        rotated_direction_icon = direction_icon.rotate(observation_reference[1], expand=True)
+        rotated_image.paste(rotated_direction_icon, (590, offset_top + 5), rotated_direction_icon)
+      else:
+        draw.text((580, offset_top + 32), "-", font=self.font15, fill=self.epd.BLACK)
 
       # Render route
       draw.text((230, offset_top + 110), plane.route.get_route().get('from_iata', '-'), font=self.font30, fill=self.epd.BLACK)
@@ -76,9 +83,9 @@ class Monitor:
       draw.text((350, offset_top + 150), to_airport, font=self.font15, fill=self.epd.BLACK, align="center")
 
       # Render position data
-      draw.text((460, offset_top + 50), f"Lat: {round(plane.lat, 4)} Lon: {round(plane.lon, 4)}", font=self.font15, fill=self.epd.BLACK)
-      draw.text((460, offset_top + 70), f"{plane.speed}kt {plane.track}°", font=self.font15, fill=self.epd.BLACK)
-      draw.text((460, offset_top + 90), f"{plane.altitude_in_feet}ft ({plane.vertical_rate}ft/min)", font=self.font15, fill=self.epd.BLACK)
+      draw.text((460, offset_top + 50), f"Lat: {round(estimated_state['lat'], 4)} Lon: {round(estimated_state['lon'], 4)}", font=self.font15, fill=self.epd.BLACK)
+      draw.text((460, offset_top + 70), f"{estimated_state['speed']}kt {estimated_state['track']}°", font=self.font15, fill=self.epd.BLACK)
+      draw.text((460, offset_top + 90), f"{estimated_state['altitude_in_feet']}ft ({plane.vertical_rate}ft/min)", font=self.font15, fill=self.epd.BLACK)
       draw.text((460, offset_top + 110), f"Zuletzt gesehen:\n{plane.last_updated_at.strftime('%Y-%m-%d %H:%M:%S')}\nTotal: {plane.number_of_messages}", font=self.font15, fill=self.epd.BLACK)
 
       # Paste plane image if available
@@ -94,7 +101,7 @@ class Monitor:
     
 
   def show_now(self):
-    if DUMMY_MONITOR:
+    if DUMMY_MODE:
       self.image.show()
     else:
       self.epd.init()

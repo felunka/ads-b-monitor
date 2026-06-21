@@ -5,7 +5,7 @@ import time
 import subprocess
 
 from ctypes import *
-from config import DUMMY_MONITOR
+from config import DUMMY_MODE
 
 logger = logging.getLogger(__name__)
 
@@ -252,7 +252,7 @@ class SunriseX3:
 
     self.GPIO.cleanup([RST_PIN, DC_PIN, CS_PIN, BUSY_PIN], PWR_PIN)
 
-if not DUMMY_MONITOR:
+if not DUMMY_MODE:
   if sys.version_info[0] == 2:
     process = subprocess.Popen("cat /proc/cpuinfo | grep Raspberry", shell=True, stdout=subprocess.PIPE)
   else:

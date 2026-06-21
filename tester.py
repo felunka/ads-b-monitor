@@ -1,70 +1,53 @@
-import math
-
-from plane import Plane
-from monitor import Monitor
-from config import EARTH_RADIUS, FRA_RUNWAYS, RUNWAY_HALF_ANGLE_DEG
-from coordinate_helper import find_best_runway_match, is_on_final_cone
-
-def make_point_from_runway_offset(runway, along_m, cross_m, arrival=True):
-  axis_heading = runway["heading"] + 180 if arrival else runway["heading"]
-  axis_angle = math.radians(axis_heading)
-
-  # Inverse rotation of to_runway_coords.
-  lat_m = math.cos(axis_angle) * along_m - math.sin(axis_angle) * cross_m
-  lon_m = math.sin(axis_angle) * along_m + math.cos(axis_angle) * cross_m
-
-  lat = runway["lat"] + math.degrees(lat_m / EARTH_RADIUS)
-  lon = runway["lon"] + math.degrees(lon_m / (EARTH_RADIUS * math.cos(math.radians(runway["lat"]))))
-  return lat, lon
-
-planes = []
-plane_data = [("3c6445", "DLH1KN"), ("71c227", "TWB403"), ("3c7a4c", "CFG038"), ("4cc52e", "ICE520"), ("01023a", "MSC2942")]
-
-target_runway = next(r for r in FRA_RUNWAYS if r["name"] == "25C")
-
-# Distances are in meters, all inside a 3 degree cone: abs(cross) < along * tan(3deg)
-offsets = [
-  (3000, 50),
-  (5500, -80),
-  (8000, 130),
-  (11000, -170),
-  (14000, 200),
-]
-
-for index, (icao, callsign) in enumerate(plane_data):
-  along_m, cross_m = offsets[index]
-  p = Plane(icao, 1)
-  p.callsign = callsign
-
-  p.lat, p.lon = 50.052, 8.636
-  p.track = float((target_runway["heading"] + (-3 + index)) % 360)
-  p.vertical_rate = -700
-
-  planes.append(p)
-
-for plane in planes:
-  in_cone = is_on_final_cone(
-    plane_lat=plane.lat,
-    plane_lon=plane.lon,
-    plane_heading=plane.track,
-    rwy_lat=target_runway["lat"],
-    rwy_lon=target_runway["lon"],
-    rwy_heading=target_runway["heading"],
-    half_angle_deg=RUNWAY_HALF_ANGLE_DEG,
-    arrival=True,
-  )
-  best = find_best_runway_match(
-    plane_lat=plane.lat,
-    plane_lon=plane.lon,
-    plane_heading=plane.track,
-    runways=FRA_RUNWAYS,
-    half_angle_deg=RUNWAY_HALF_ANGLE_DEG,
-    arrival=True,
-  )
-  print(f"{plane.callsign}: in_cone={in_cone} best_runway={best['name'] if best else '-'}")
+import csv
+import queue
+import re
+import time
 
 
+class CsvReplayReader:
 
+  def __init__(self, csv_path: str = "data/test_adsb.csv"):
+    self.q = queue.Queue()
+    self.csv_path = csv_path
+    self._running = True
+    self._msg_pattern = re.compile(r"^[0-9a-fA-F]{14,28}$")
 
-m = Monitor()
-m.render_planes(planes)
+  def _sleep_interruptible(self, delay_s: float):
+    remaining = max(0.0, delay_s)
+    while self._running and remaining > 0:
+      step = min(0.2, remaining)
+      time.sleep(step)
+      remaining -= step
+
+  def run(self):
+    while self._running:
+      previous_ts = None
+      try:
+        with open(self.csv_path, mode="r", newline="") as csv_file:
+          csv_reader = csv.reader(csv_file)
+          for row in csv_reader:
+            if not self._running:
+              return
+            if len(row) < 2:
+              continue
+
+            try:
+              current_ts = float(row[0])
+            except ValueError:
+              continue
+
+            message_hex = row[1].strip()
+            if not self._msg_pattern.fullmatch(message_hex):
+              continue
+
+            if previous_ts is not None and current_ts > previous_ts:
+              self._sleep_interruptible(current_ts - previous_ts)
+
+            self.q.put(message_hex)
+            previous_ts = current_ts
+      except FileNotFoundError:
+        # Keep trying until the replay file becomes available.
+        self._sleep_interruptible(1.0)
+
+  def die(self):
+    self._running = False

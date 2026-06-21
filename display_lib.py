@@ -1,9 +1,6 @@
 import logging
 import epdconfig
-
-import PIL
 from PIL import Image
-import io
 
 # Display resolution
 EPD_WIDTH     = 960
@@ -178,8 +175,8 @@ class EPD:
     Height = self.height
 
     self.send_command(0x10)
-    for j in range(0, Height):
-      for i in range(0, Width):
+    for _ in range(0, Height):
+      for _ in range(0, Width):
           self.send_data(color)
     self.TurnOnDisplay()
 
