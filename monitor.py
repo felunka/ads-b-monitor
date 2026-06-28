@@ -89,8 +89,12 @@ class Monitor:
       draw.text((460, offset_top + 110), f"Zuletzt gesehen:\n{plane.last_updated_at.strftime('%Y-%m-%d %H:%M:%S')}\nTotal: {plane.number_of_messages}", font=self.font15, fill=self.epd.BLACK)
 
       # Paste plane image if available
-      if plane.image.get_image() is not None:
+      if False: # plane.image.get_image() is not None:
         rotated_image.paste(plane.image.get_image(), (0, offset_top))
+      # If there is no image => render icon
+      else:
+        rotated_image.paste(plane_icon, (100, offset_top + 90), plane_icon)
+        draw.text((80, offset_top + 120), "No Image", font=self.font15, fill=self.epd.BLACK)
 
       if index < 5:
         offset_top = 192 * (index+1)
